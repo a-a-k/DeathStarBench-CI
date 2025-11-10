@@ -1,0 +1,2 @@
+# The simulator uses only the Python standard library; the file exists so pip
+# caching stays warm when Actions resolves dependencies.

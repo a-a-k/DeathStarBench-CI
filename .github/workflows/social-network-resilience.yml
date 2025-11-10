@@ -1,0 +1,105 @@
+name: Social Network resilience demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  THRESHOLD: ${{ vars.SN_THRESHOLD || '0.95' }}
+  PFAIL_SET: ${{ vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]' }}
+  ENDPOINT_FILTERS: ${{ vars.SN_ENDPOINT_FILTERS || '' }}
+  GATE_MODE: ${{ vars.SN_GATE_MODE || 'any' }}
+  ARTIFACTS_DIR: socialNetwork/sheaft-ci/artifacts
+  OUTPUT_DIR: socialNetwork/sheaft-ci/out
+  SUMMARY_PATH: socialNetwork/sheaft-ci/out/gate_summary.json
+  REPORT_DIR: socialNetwork/sheaft-ci/report
+  REPORT_HTML: socialNetwork/sheaft-ci/report/index.html
+
+jobs:
+  simulate:
+    name: Run simulations (pfail=${{ matrix.pfail }})
+    strategy:
+      matrix:
+        pfail: ${{ fromJSON(env.PFAIL_SET) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: socialNetwork/sheaft-ci/requirements.txt
+      - name: Install requirements
+        run: pip install -r socialNetwork/sheaft-ci/requirements.txt
+      - name: Run resilience simulation
+        env:
+          PFAIL: ${{ matrix.pfail }}
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          python socialNetwork/sheaft-ci/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$ARTIFACTS_DIR/norepl.yaml" --pfail "$PFAIL" --out "$OUTPUT_DIR/norepl_pfail-$PFAIL.json"
+          python socialNetwork/sheaft-ci/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$ARTIFACTS_DIR/replicas.yaml" --pfail "$PFAIL" --out "$OUTPUT_DIR/repl_pfail-$PFAIL.json"
+      - name: Upload simulation outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-network-resilience-${{ matrix.pfail }}
+          path: |
+            ${{ env.OUTPUT_DIR }}/norepl_pfail-${{ matrix.pfail }}.json
+            ${{ env.OUTPUT_DIR }}/repl_pfail-${{ matrix.pfail }}.json
+
+  gate-and-report:
+    name: Gate and publish report
+    needs: simulate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: socialNetwork/sheaft-ci/requirements.txt
+      - name: Install requirements
+        run: pip install -r socialNetwork/sheaft-ci/requirements.txt
+      - name: Download simulation outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: social-network-resilience-*
+          merge-multiple: true
+          path: ${{ env.OUTPUT_DIR }}
+      - name: Apply release gate
+        id: gate
+        run: |
+          python socialNetwork/sheaft-ci/gate.py --results "$OUTPUT_DIR" --threshold "$THRESHOLD" --mode "$GATE_MODE" --filters "$ENDPOINT_FILTERS" --summary "$SUMMARY_PATH"
+      - name: Build static HTML report
+        if: always()
+        run: |
+          python socialNetwork/sheaft-ci/report.py --results "$OUTPUT_DIR" --summary "$SUMMARY_PATH" --html "$REPORT_HTML"
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: ${{ env.REPORT_DIR }}
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: gate-and-report
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v2

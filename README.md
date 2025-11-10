@@ -27,3 +27,15 @@ If you use this benchmark suite in your work, we ask that you please cite the pa
 ## Beta-testing
 
 If you are interested in joining the beta-testing group for DeathStarBench, send us an email at: <microservices-bench-L@list.cornell.edu>
+
+## Resilience demo (Social Network only)
+
+This fork ships an offline **Social Network** resilience showcase under [`socialNetwork/sheaft-ci/`](socialNetwork/sheaft-ci/). The GitHub Actions workflow [`social-network-resilience.yml`](.github/workflows/social-network-resilience.yml) replays the saved Jaeger dependency graph, compares the baseline (`norepl.yaml`) and scaled (`replicas.yaml`) topologies across multiple failure priors, applies the release gate, and publishes a static dashboard to GitHub Pages.
+
+* **Published report:** https://<your-github-username>.github.io/DeathStarBench-CI/
+* **Threshold:** override `THRESHOLD` (default `0.95`) via repository variables or workflow dispatch inputs.
+* **Failure priors:** update `PFAIL_SET` (default `[0.1, 0.3, 0.5]`) to change the matrix of simulations.
+* **Endpoint filters:** set `ENDPOINT_FILTERS` (comma-separated paths such as `/compose,/timeline`) to scope the gate.
+* **Refresh dependencies:** define `JAEGER_URL` to fetch a new `deps.json` snapshot from the Jaeger **dependencies** endpoint before running the simulator; otherwise, the saved offline graph is used.
+
+The automation is intentionally limited to the `socialNetwork/` project and does not alter any other DeathStarBench applications.

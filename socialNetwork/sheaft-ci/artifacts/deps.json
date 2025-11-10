@@ -1,0 +1,30 @@
+{
+  "generated": "2023-10-01T00:00:00Z",
+  "source": "Jaeger dependencies API",
+  "dependencies": [
+    { "parent": "nginx-web-server", "child": "compose-post-service" },
+    { "parent": "compose-post-service", "child": "user-service" },
+    { "parent": "compose-post-service", "child": "social-graph-service" },
+    { "parent": "compose-post-service", "child": "post-storage-service" },
+    { "parent": "nginx-web-server", "child": "user-timeline-service" },
+    { "parent": "user-timeline-service", "child": "post-storage-service" },
+    { "parent": "user-timeline-service", "child": "user-service" },
+    { "parent": "user-timeline-service", "child": "social-graph-service" }
+  ],
+  "entrypoints": {
+    "/compose": [
+      "nginx-web-server",
+      "compose-post-service",
+      "user-service",
+      "social-graph-service",
+      "post-storage-service"
+    ],
+    "/timeline": [
+      "nginx-web-server",
+      "user-timeline-service",
+      "post-storage-service",
+      "user-service",
+      "social-graph-service"
+    ]
+  }
+}
