@@ -136,21 +136,18 @@ jobs:
         uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ env.REPORT_DIR }}
-      - name: Propagate gate failure
-        if: ${{ steps.gate.outcome == 'failure' }}
-        run: exit 1
 
   deploy:
     name: Deploy GitHub Pages
     needs: gate-and-report
-    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || '' }}
     steps:
       - name: Summarize gate outcome
         run: |
@@ -158,4 +155,24 @@ jobs:
           echo "Gate reason: ${{ needs.gate-and-report.outputs.gate_reason }}"
       - name: Deploy to GitHub Pages
         id: deploy
+        if: ${{ github.ref == 'refs/heads/main' }}
         uses: actions/deploy-pages@v4
+      - name: Log skipped deployment
+        if: ${{ github.ref != 'refs/heads/main' }}
+        run: echo "Deployment skipped because this is not the main branch"
+
+  enforce-gate:
+    name: Propagate gate failure
+    needs:
+      - gate-and-report
+      - deploy
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when the gate fails
+        run: |
+          if [ "${{ needs.gate-and-report.outputs.gate_passed }}" != "true" ]; then
+            echo "Release gate failed: ${{ needs.gate-and-report.outputs.gate_reason }}"
+            exit 1
+          fi
+          echo "Release gate passed"
