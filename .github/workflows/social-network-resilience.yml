@@ -4,12 +4,25 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      threshold:
+        description: 'Override the reliability gate threshold'
+        required: false
+      pfail_set:
+        description: 'JSON array of failure priors to simulate (e.g. [0.1,0.3,0.5])'
+        required: false
+      endpoint_filters:
+        description: 'Comma-separated endpoints to gate (empty = all)'
+        required: false
+      gate_mode:
+        description: 'Gate mode: any (default) or mean'
+        required: false
 
 env:
-  THRESHOLD: ${{ vars.SN_THRESHOLD || '0.95' }}
-  PFAIL_SET: ${{ vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]' }}
-  ENDPOINT_FILTERS: ${{ vars.SN_ENDPOINT_FILTERS || '' }}
-  GATE_MODE: ${{ vars.SN_GATE_MODE || 'any' }}
+  THRESHOLD: ${{ github.event.inputs.threshold || vars.SN_THRESHOLD || '0.95' }}
+  PFAIL_SET: ${{ github.event.inputs.pfail_set || vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]' }}
+  ENDPOINT_FILTERS: ${{ github.event.inputs.endpoint_filters || vars.SN_ENDPOINT_FILTERS || '' }}
+  GATE_MODE: ${{ github.event.inputs.gate_mode || vars.SN_GATE_MODE || 'any' }}
   ARTIFACTS_DIR: socialNetwork/sheaft-ci/artifacts
   OUTPUT_DIR: socialNetwork/sheaft-ci/out
   SUMMARY_PATH: socialNetwork/sheaft-ci/out/gate_summary.json
@@ -21,7 +34,7 @@ jobs:
     name: Run simulations (pfail=${{ matrix.pfail }})
     strategy:
       matrix:
-        pfail: ${{ fromJSON(env.PFAIL_SET) }}
+        pfail: ${{ fromJSON(github.event.inputs.pfail_set || vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -102,4 +115,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deploy
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
