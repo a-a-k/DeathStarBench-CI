@@ -70,6 +70,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      gate_passed: ${{ steps.gate.outputs.passed }}
+      gate_reason: ${{ steps.gate.outputs.reason }}
+      gate_summary_path: ${{ steps.gate.outputs.summary_path }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -88,22 +92,58 @@ jobs:
           path: ${{ env.OUTPUT_DIR }}
       - name: Apply release gate
         id: gate
+        continue-on-error: true
         run: |
-          python socialNetwork/resilience-demo/gate.py --results "$OUTPUT_DIR" --threshold "$THRESHOLD" --mode "$GATE_MODE" --filters "$ENDPOINT_FILTERS" --summary "$SUMMARY_PATH"
+          set -o pipefail
+          gate_output="$(python socialNetwork/resilience-demo/gate.py --results "$OUTPUT_DIR" --threshold "$THRESHOLD" --mode "$GATE_MODE" --filters "$ENDPOINT_FILTERS" --summary "$SUMMARY_PATH" 2>&1)"
+          status=$?
+          echo "$gate_output"
+          if [ -f "$SUMMARY_PATH" ]; then
+            echo "summary_path=$SUMMARY_PATH" >>"$GITHUB_OUTPUT"
+            passed=$(jq -r '.passed' "$SUMMARY_PATH")
+            reason=$(jq -r '.reason' "$SUMMARY_PATH")
+            echo "passed=$passed" >>"$GITHUB_OUTPUT"
+            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
+            echo "$reason" >>"$GITHUB_OUTPUT"
+            echo "EOF" >>"$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >>"$GITHUB_OUTPUT"
+            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
+            echo "$gate_output" >>"$GITHUB_OUTPUT"
+            echo "EOF" >>"$GITHUB_OUTPUT"
+          fi
+          exit $status
       - name: Build static HTML report
         if: always()
         run: |
           python socialNetwork/resilience-demo/report.py --results "$OUTPUT_DIR" --summary "$SUMMARY_PATH" --html "$REPORT_HTML"
+      - name: Add gate summary to job summary
+        if: always()
+        run: |
+          if [ -f "$SUMMARY_PATH" ]; then
+            {
+              echo "## Release gate results"
+              echo
+              echo "Threshold: $THRESHOLD"
+              echo
+              echo '```json'
+              cat "$SUMMARY_PATH"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload Pages artifact
         if: always()
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ env.REPORT_DIR }}
+      - name: Propagate gate failure
+        if: ${{ steps.gate.outcome == 'failure' }}
+        run: exit 1
 
   deploy:
     name: Deploy GitHub Pages
     needs: gate-and-report
-    if: ${{ always() }}
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -112,6 +152,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
+      - name: Summarize gate outcome
+        run: |
+          echo "Gate passed: ${{ needs.gate-and-report.outputs.gate_passed }}"
+          echo "Gate reason: ${{ needs.gate-and-report.outputs.gate_reason }}"
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
