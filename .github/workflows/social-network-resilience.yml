@@ -146,7 +146,7 @@ jobs:
       pages: write
       id-token: write
     environment:
-      name: github-pages
+      name: ${{ github.ref == 'refs/heads/main' && 'github-pages' || 'github-pages-preview' }}
       url: ${{ steps.deploy.outputs.page_url || '' }}
     steps:
       - name: Summarize gate outcome
