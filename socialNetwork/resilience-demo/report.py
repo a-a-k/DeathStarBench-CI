@@ -144,7 +144,7 @@ def render_html(
       {table_markup}
     </section>
     <footer>
-      Generated from offline artifacts under <code>socialNetwork/sheaft-ci/</code>.
+      Generated from offline artifacts under <code>socialNetwork/resilience-demo/</code>.
     </footer>
   </body>
 </html>

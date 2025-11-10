@@ -30,7 +30,7 @@ If you are interested in joining the beta-testing group for DeathStarBench, send
 
 ## Resilience demo (Social Network only)
 
-This fork ships an offline **Social Network** resilience showcase under [`socialNetwork/sheaft-ci/`](socialNetwork/sheaft-ci/). The GitHub Actions workflow [`social-network-resilience.yml`](.github/workflows/social-network-resilience.yml) replays the saved Jaeger dependency graph, compares the baseline (`norepl.yaml`) and scaled (`replicas.yaml`) topologies across multiple failure priors, applies the release gate, and publishes a static dashboard to GitHub Pages.
+This fork ships an offline **Social Network** resilience showcase under [`socialNetwork/resilience-demo/`](socialNetwork/resilience-demo/). The GitHub Actions workflow [`social-network-resilience.yml`](.github/workflows/social-network-resilience.yml) replays the saved Jaeger dependency graph, compares the baseline (`norepl.yaml`) and scaled (`replicas.yaml`) topologies across multiple failure priors, applies the release gate, and publishes a static dashboard to GitHub Pages.
 
 * **Published report:** https://<your-github-username>.github.io/DeathStarBench-CI/
 * **Threshold:** override `THRESHOLD` (default `0.95`) via repository variables or workflow dispatch inputs.
