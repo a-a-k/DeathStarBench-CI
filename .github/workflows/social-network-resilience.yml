@@ -29,8 +29,87 @@ env:
   REPORT_HTML: socialNetwork/resilience-demo/report/index.html
 
 jobs:
+  collect-dependencies:
+    name: Capture live dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install wrk2 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev zlib1g-dev libluajit-5.1-dev lua-socket jq
+          python3 -m pip install --upgrade pip
+          python3 -m pip install aiohttp
+      - name: Build wrk2 load generator
+        run: make -C wrk2
+      - name: Start Social Network stack
+        working-directory: socialNetwork
+        env:
+          COMPOSE_DOCKER_CLI_BUILD: 1
+          DOCKER_BUILDKIT: 1
+        run: docker compose up -d
+      - name: Warm services and snapshot dependencies
+        env:
+          WRK_BIN: ${{ github.workspace }}/wrk2/wrk
+          DEPS_PATH: ${{ github.workspace }}/socialNetwork/resilience-demo/artifacts/deps.json
+        run: |
+          set -euo pipefail
+          cd socialNetwork
+          export LUA_PATH="./?.lua;./?/init.lua;/usr/share/lua/5.1/?.lua;/usr/share/lua/5.1/?/init.lua;;"
+          export LUA_CPATH="./?.so;./?/init.so;/usr/lib/x86_64-linux-gnu/lua/5.1/?.so;/usr/lib/x86_64-linux-gnu/lua/5.1/?/init.so;;"
+          for attempt in {1..30}; do
+            if curl -sf http://127.0.0.1:8080/index.html >/dev/null; then
+              break
+            fi
+            sleep 5
+          done
+          if ! curl -sf http://127.0.0.1:8080/index.html >/dev/null; then
+            echo "Social Network frontend did not become ready" >&2
+            exit 1
+          fi
+          python3 scripts/init_social_graph.py --graph socfb-Reed98 --compose --ip 127.0.0.1 --port 8080
+          "${WRK_BIN}" -t2 -c32 -d30s -R300 \
+            -s wrk2/scripts/social-network/mixed-workload.lua \
+            http://127.0.0.1:8080/index.html
+          sleep 15
+          mkdir -p "$(dirname "${DEPS_PATH}")"
+          tmp_deps="$(mktemp)"
+          for attempt in {1..12}; do
+            ts=$(($(date +%s%N)/1000000))
+            if curl -sSf "http://127.0.0.1:16686/api/dependencies?endTs=$ts&lookback=3600000" >"${tmp_deps}"; then
+              if jq -e '.data | length > 0' "${tmp_deps}" >/dev/null 2>&1; then
+                mv "${tmp_deps}" "${DEPS_PATH}"
+                break
+              fi
+              echo "Jaeger dependency graph is empty (attempt ${attempt}); waiting for traces to be indexed..."
+            fi
+            sleep 10
+          done
+          if [ ! -f "${DEPS_PATH}" ]; then
+            echo "Failed to capture Jaeger dependencies" >&2
+            jq '.' "${tmp_deps}" 2>/dev/null || cat "${tmp_deps}" 2>/dev/null || true
+            rm -f "${tmp_deps}"
+            exit 1
+          fi
+          rm -f "${tmp_deps}"
+      - name: Tear down Social Network stack
+        if: always()
+        working-directory: socialNetwork
+        run: docker compose down
+      - name: Upload dependencies snapshot
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-network-deps
+          path: socialNetwork/resilience-demo/artifacts/deps.json
+
   simulate:
     name: Run simulations (pfail=${{ matrix.pfail }})
+    needs: collect-dependencies
     strategy:
       matrix:
         pfail: ${{ fromJSON(github.event.inputs.pfail_set || vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]') }}
@@ -47,6 +126,21 @@ jobs:
           cache-dependency-path: socialNetwork/resilience-demo/requirements.txt
       - name: Install requirements
         run: pip install -r socialNetwork/resilience-demo/requirements.txt
+      - name: Download dependencies snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: social-network-deps
+          path: ${{ runner.temp }}/social-network-deps
+      - name: Prepare dependency graph
+        run: |
+          set -euo pipefail
+          mkdir -p "$ARTIFACTS_DIR"
+          snapshot="$(find "$RUNNER_TEMP/social-network-deps" -name 'deps.json' -print -quit)"
+          if [ -z "$snapshot" ]; then
+            echo "No deps.json found in artifact" >&2
+            exit 1
+          fi
+          cp "$snapshot" "$ARTIFACTS_DIR/deps.json"
       - name: Run resilience simulation
         env:
           PFAIL: ${{ matrix.pfail }}
@@ -103,14 +197,18 @@ jobs:
             passed=$(jq -r '.passed' "$SUMMARY_PATH")
             reason=$(jq -r '.reason' "$SUMMARY_PATH")
             echo "passed=$passed" >>"$GITHUB_OUTPUT"
-            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
-            echo "$reason" >>"$GITHUB_OUTPUT"
-            echo "EOF" >>"$GITHUB_OUTPUT"
+            {
+              echo "reason<<EOF"
+              echo "$reason"
+              echo "EOF"
+            } >>"$GITHUB_OUTPUT"
           else
-            echo "passed=false" >>"$GITHUB_OUTPUT"
-            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
-            echo "$gate_output" >>"$GITHUB_OUTPUT"
-            echo "EOF" >>"$GITHUB_OUTPUT"
+            {
+              echo "passed=false"
+              echo "reason<<EOF"
+              echo "$gate_output"
+              echo "EOF"
+            } >>"$GITHUB_OUTPUT"
           fi
           exit $status
       - name: Build static HTML report
