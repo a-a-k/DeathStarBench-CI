@@ -16,12 +16,16 @@ on:
       gate_mode:
         description: 'Gate mode: any (default) or mean'
         required: false
+      sim_mode:
+        description: 'Simulation mode: norepl (default) or repl'
+        required: false
 
 env:
   THRESHOLD: ${{ github.event.inputs.threshold || vars.SN_THRESHOLD || '0.95' }}
   PFAIL_SET: ${{ github.event.inputs.pfail_set || vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]' }}
   ENDPOINT_FILTERS: ${{ github.event.inputs.endpoint_filters || vars.SN_ENDPOINT_FILTERS || '' }}
   GATE_MODE: ${{ github.event.inputs.gate_mode || vars.SN_GATE_MODE || 'any' }}
+  SIM_MODE: ${{ github.event.inputs.sim_mode || vars.SN_SIM_MODE || 'norepl' }}
   ARTIFACTS_DIR: socialNetwork/resilience-demo/artifacts
   OUTPUT_DIR: socialNetwork/resilience-demo/out
   SUMMARY_PATH: socialNetwork/resilience-demo/out/gate_summary.json
@@ -146,16 +150,25 @@ jobs:
           PFAIL: ${{ matrix.pfail }}
         run: |
           mkdir -p "$OUTPUT_DIR"
-          python socialNetwork/resilience-demo/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$ARTIFACTS_DIR/norepl.yaml" --pfail "$PFAIL" --out "$OUTPUT_DIR/norepl_pfail-$PFAIL.json"
-          python socialNetwork/resilience-demo/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$ARTIFACTS_DIR/replicas.yaml" --pfail "$PFAIL" --out "$OUTPUT_DIR/repl_pfail-$PFAIL.json"
+          case "$SIM_MODE" in
+            norepl)
+              replicas_file="$ARTIFACTS_DIR/norepl.yaml"
+              ;;
+            repl)
+              replicas_file="$ARTIFACTS_DIR/replicas.yaml"
+              ;;
+            *)
+              echo "Unknown SIM_MODE: $SIM_MODE" >&2
+              exit 1
+              ;;
+          esac
+          python socialNetwork/resilience-demo/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$replicas_file" --pfail "$PFAIL" --out "$OUTPUT_DIR/${SIM_MODE}_pfail-$PFAIL.json"
       - name: Upload simulation outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: social-network-resilience-${{ matrix.pfail }}
-          path: |
-            ${{ env.OUTPUT_DIR }}/norepl_pfail-${{ matrix.pfail }}.json
-            ${{ env.OUTPUT_DIR }}/repl_pfail-${{ matrix.pfail }}.json
+          path: ${{ env.OUTPUT_DIR }}/${{ env.SIM_MODE }}_pfail-${{ matrix.pfail }}.json
 
   gate-and-report:
     name: Gate and publish report
@@ -189,7 +202,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          gate_output="$(python socialNetwork/resilience-demo/gate.py --results "$OUTPUT_DIR" --threshold "$THRESHOLD" --mode "$GATE_MODE" --filters "$ENDPOINT_FILTERS" --summary "$SUMMARY_PATH" 2>&1)"
+          gate_output="$(python socialNetwork/resilience-demo/gate.py --results "$OUTPUT_DIR" --threshold "$THRESHOLD" --mode "$GATE_MODE" --results-mode "$SIM_MODE" --filters "$ENDPOINT_FILTERS" --summary "$SUMMARY_PATH" 2>&1)"
           status=$?
           echo "$gate_output"
           if [ -f "$SUMMARY_PATH" ]; then
