@@ -146,8 +146,8 @@ jobs:
       pages: write
       id-token: write
     environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'github-pages' || 'github-pages-preview' }}
-      url: ${{ steps.deploy.outputs.page_url || '' }}
+      name: ${{ github.ref == 'refs/heads/main' && 'github-pages' || format('github-pages-preview/{0}', github.ref_name) }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy.outputs.preview_url || '' }}
     steps:
       - name: Summarize gate outcome
         run: |
@@ -155,11 +155,9 @@ jobs:
           echo "Gate reason: ${{ needs.gate-and-report.outputs.gate_reason }}"
       - name: Deploy to GitHub Pages
         id: deploy
-        if: ${{ github.ref == 'refs/heads/main' }}
         uses: actions/deploy-pages@v4
-      - name: Log skipped deployment
-        if: ${{ github.ref != 'refs/heads/main' }}
-        run: echo "Deployment skipped because this is not the main branch"
+        with:
+          preview: ${{ github.ref != 'refs/heads/main' }}
 
   enforce-gate:
     name: Propagate gate failure
