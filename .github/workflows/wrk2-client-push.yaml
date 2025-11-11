@@ -2,10 +2,11 @@ name: Push wrk2 client
 concurrency: ci-wrk2-client
 
 on:
-  push: 
-    branches: [ master ]
-    paths: 
-      - 'wrk2/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Disabled by default in this fork. Provide context to run manually.'
+        required: false
 
 env:
   IMAGE_BASE_NAME: 'deathstarbench/wrk2-client'

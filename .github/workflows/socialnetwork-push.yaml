@@ -2,10 +2,11 @@ name: Push SocialNetwork
 concurrency: ci-socialNetwork
 
 on:
-  push: 
-    branches: [ master ]
-    paths: 
-      - 'socialNetwork/**'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Disabled by default in this fork. Provide context to run manually.'
+        required: false
 
 env:
   IMAGE_BASE_NAME: 'deathstarbench/social-network-microservices'

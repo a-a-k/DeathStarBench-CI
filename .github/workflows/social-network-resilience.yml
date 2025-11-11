@@ -1,0 +1,176 @@
+name: Social Network resilience demo
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      threshold:
+        description: 'Override the reliability gate threshold'
+        required: false
+      pfail_set:
+        description: 'JSON array of failure priors to simulate (e.g. [0.1,0.3,0.5])'
+        required: false
+      endpoint_filters:
+        description: 'Comma-separated endpoints to gate (empty = all)'
+        required: false
+      gate_mode:
+        description: 'Gate mode: any (default) or mean'
+        required: false
+
+env:
+  THRESHOLD: ${{ github.event.inputs.threshold || vars.SN_THRESHOLD || '0.95' }}
+  PFAIL_SET: ${{ github.event.inputs.pfail_set || vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]' }}
+  ENDPOINT_FILTERS: ${{ github.event.inputs.endpoint_filters || vars.SN_ENDPOINT_FILTERS || '' }}
+  GATE_MODE: ${{ github.event.inputs.gate_mode || vars.SN_GATE_MODE || 'any' }}
+  ARTIFACTS_DIR: socialNetwork/resilience-demo/artifacts
+  OUTPUT_DIR: socialNetwork/resilience-demo/out
+  SUMMARY_PATH: socialNetwork/resilience-demo/out/gate_summary.json
+  REPORT_DIR: socialNetwork/resilience-demo/report
+  REPORT_HTML: socialNetwork/resilience-demo/report/index.html
+
+jobs:
+  simulate:
+    name: Run simulations (pfail=${{ matrix.pfail }})
+    strategy:
+      matrix:
+        pfail: ${{ fromJSON(github.event.inputs.pfail_set || vars.SN_PFAIL_SET || '[0.1, 0.3, 0.5]') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: socialNetwork/resilience-demo/requirements.txt
+      - name: Install requirements
+        run: pip install -r socialNetwork/resilience-demo/requirements.txt
+      - name: Run resilience simulation
+        env:
+          PFAIL: ${{ matrix.pfail }}
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          python socialNetwork/resilience-demo/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$ARTIFACTS_DIR/norepl.yaml" --pfail "$PFAIL" --out "$OUTPUT_DIR/norepl_pfail-$PFAIL.json"
+          python socialNetwork/resilience-demo/simulate.py --graph "$ARTIFACTS_DIR/deps.json" --replicas "$ARTIFACTS_DIR/replicas.yaml" --pfail "$PFAIL" --out "$OUTPUT_DIR/repl_pfail-$PFAIL.json"
+      - name: Upload simulation outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: social-network-resilience-${{ matrix.pfail }}
+          path: |
+            ${{ env.OUTPUT_DIR }}/norepl_pfail-${{ matrix.pfail }}.json
+            ${{ env.OUTPUT_DIR }}/repl_pfail-${{ matrix.pfail }}.json
+
+  gate-and-report:
+    name: Gate and publish report
+    needs: simulate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      gate_passed: ${{ steps.gate.outputs.passed }}
+      gate_reason: ${{ steps.gate.outputs.reason }}
+      gate_summary_path: ${{ steps.gate.outputs.summary_path }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: socialNetwork/resilience-demo/requirements.txt
+      - name: Install requirements
+        run: pip install -r socialNetwork/resilience-demo/requirements.txt
+      - name: Download simulation outputs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: social-network-resilience-*
+          merge-multiple: true
+          path: ${{ env.OUTPUT_DIR }}
+      - name: Apply release gate
+        id: gate
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          gate_output="$(python socialNetwork/resilience-demo/gate.py --results "$OUTPUT_DIR" --threshold "$THRESHOLD" --mode "$GATE_MODE" --filters "$ENDPOINT_FILTERS" --summary "$SUMMARY_PATH" 2>&1)"
+          status=$?
+          echo "$gate_output"
+          if [ -f "$SUMMARY_PATH" ]; then
+            echo "summary_path=$SUMMARY_PATH" >>"$GITHUB_OUTPUT"
+            passed=$(jq -r '.passed' "$SUMMARY_PATH")
+            reason=$(jq -r '.reason' "$SUMMARY_PATH")
+            echo "passed=$passed" >>"$GITHUB_OUTPUT"
+            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
+            echo "$reason" >>"$GITHUB_OUTPUT"
+            echo "EOF" >>"$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >>"$GITHUB_OUTPUT"
+            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
+            echo "$gate_output" >>"$GITHUB_OUTPUT"
+            echo "EOF" >>"$GITHUB_OUTPUT"
+          fi
+          exit $status
+      - name: Build static HTML report
+        if: always()
+        run: |
+          python socialNetwork/resilience-demo/report.py --results "$OUTPUT_DIR" --summary "$SUMMARY_PATH" --html "$REPORT_HTML"
+      - name: Add gate summary to job summary
+        if: always()
+        run: |
+          if [ -f "$SUMMARY_PATH" ]; then
+            {
+              echo "## Release gate results"
+              echo
+              echo "Threshold: $THRESHOLD"
+              echo
+              echo '```json'
+              cat "$SUMMARY_PATH"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload Pages artifact
+        if: always()
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ env.REPORT_DIR }}
+
+  deploy:
+    name: Deploy GitHub Pages
+    needs: gate-and-report
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'github-pages' || format('github-pages-preview/{0}', github.ref_name) }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy.outputs.preview_url || '' }}
+    steps:
+      - name: Summarize gate outcome
+        run: |
+          echo "Gate passed: ${{ needs.gate-and-report.outputs.gate_passed }}"
+          echo "Gate reason: ${{ needs.gate-and-report.outputs.gate_reason }}"
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+        with:
+          preview: ${{ github.ref != 'refs/heads/main' }}
+
+  enforce-gate:
+    name: Propagate gate failure
+    needs:
+      - gate-and-report
+      - deploy
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail when the gate fails
+        run: |
+          if [ "${{ needs.gate-and-report.outputs.gate_passed }}" != "true" ]; then
+            echo "Release gate failed: ${{ needs.gate-and-report.outputs.gate_reason }}"
+            exit 1
+          fi
+          echo "Release gate passed"

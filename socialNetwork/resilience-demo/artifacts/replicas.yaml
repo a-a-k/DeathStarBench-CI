@@ -1,0 +1,6 @@
+nginx-web-server: 2
+compose-post-service: 3
+post-storage-service: 2
+user-service: 2
+social-graph-service: 2
+user-timeline-service: 2
