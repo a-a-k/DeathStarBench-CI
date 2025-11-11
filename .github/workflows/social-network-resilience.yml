@@ -41,7 +41,7 @@ jobs:
       - name: Install wrk2 dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev zlib1g-dev libluajit-5.1-dev
+          sudo apt-get install -y build-essential libssl-dev zlib1g-dev libluajit-5.1-dev lua-socket jq
           python3 -m pip install --upgrade pip
           python3 -m pip install aiohttp
       - name: Build wrk2 load generator
@@ -59,6 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           cd socialNetwork
+          export LUA_PATH="./?.lua;./?/init.lua;/usr/share/lua/5.1/?.lua;/usr/share/lua/5.1/?/init.lua;;"
+          export LUA_CPATH="./?.so;./?/init.so;/usr/lib/x86_64-linux-gnu/lua/5.1/?.so;/usr/lib/x86_64-linux-gnu/lua/5.1/?/init.so;;"
           for attempt in {1..30}; do
             if curl -sf http://127.0.0.1:8080/index.html >/dev/null; then
               break
@@ -74,8 +76,26 @@ jobs:
             -s wrk2/scripts/social-network/mixed-workload.lua \
             http://127.0.0.1:8080/index.html
           sleep 15
-          ts=$(($(date +%s%N)/1000000))
-          curl -sSf "http://127.0.0.1:16686/api/dependencies?endTs=$ts&lookback=3600000" >"${DEPS_PATH}"
+          mkdir -p "$(dirname "${DEPS_PATH}")"
+          tmp_deps="$(mktemp)"
+          for attempt in {1..12}; do
+            ts=$(($(date +%s%N)/1000000))
+            if curl -sSf "http://127.0.0.1:16686/api/dependencies?endTs=$ts&lookback=3600000" >"${tmp_deps}"; then
+              if jq -e '.data | length > 0' "${tmp_deps}" >/dev/null 2>&1; then
+                mv "${tmp_deps}" "${DEPS_PATH}"
+                break
+              fi
+              echo "Jaeger dependency graph is empty (attempt ${attempt}); waiting for traces to be indexed..."
+            fi
+            sleep 10
+          done
+          if [ ! -f "${DEPS_PATH}" ]; then
+            echo "Failed to capture Jaeger dependencies" >&2
+            jq '.' "${tmp_deps}" 2>/dev/null || cat "${tmp_deps}" 2>/dev/null || true
+            rm -f "${tmp_deps}"
+            exit 1
+          fi
+          rm -f "${tmp_deps}"
       - name: Tear down Social Network stack
         if: always()
         working-directory: socialNetwork
@@ -177,14 +197,18 @@ jobs:
             passed=$(jq -r '.passed' "$SUMMARY_PATH")
             reason=$(jq -r '.reason' "$SUMMARY_PATH")
             echo "passed=$passed" >>"$GITHUB_OUTPUT"
-            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
-            echo "$reason" >>"$GITHUB_OUTPUT"
-            echo "EOF" >>"$GITHUB_OUTPUT"
+            {
+              echo "reason<<EOF"
+              echo "$reason"
+              echo "EOF"
+            } >>"$GITHUB_OUTPUT"
           else
-            echo "passed=false" >>"$GITHUB_OUTPUT"
-            echo "reason<<'EOF'" >>"$GITHUB_OUTPUT"
-            echo "$gate_output" >>"$GITHUB_OUTPUT"
-            echo "EOF" >>"$GITHUB_OUTPUT"
+            {
+              echo "passed=false"
+              echo "reason<<EOF"
+              echo "$gate_output"
+              echo "EOF"
+            } >>"$GITHUB_OUTPUT"
           fi
           exit $status
       - name: Build static HTML report
