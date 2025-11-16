@@ -2,10 +2,15 @@
 #define SOCIAL_NETWORK_MICROSERVICES_SRC_COMPOSEPOSTSERVICE_COMPOSEPOSTHANDLER_H_
 
 #include <chrono>
+#include <cstdlib>
+#include <cstring>
 #include <future>
 #include <iostream>
+#include <netdb.h>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <vector>
 
 #include "../../gen-cpp/ComposePostService.h"
@@ -70,6 +75,7 @@ class ComposePostHandler : public ComposePostServiceIf {
       int64_t req_id, int64_t post_id, int64_t user_id, int64_t timestamp,
       const std::vector<int64_t> &user_mentions_id,
       const std::map<std::string, std::string> &carrier);
+  void _RecordAnalyticsEvent();
 
   Creator _ComposeCreaterHelper(
       int64_t req_id, int64_t user_id, const std::string &username,
@@ -437,7 +443,62 @@ void ComposePostHandler::ComposePost(
   // {
   //   throw;
   // }
+  _RecordAnalyticsEvent();
   span->Finish();
+}
+
+inline void ComposePostHandler::_RecordAnalyticsEvent() {
+  const char *analytics_addr = std::getenv("ANALYTICS_SERVICE_ADDR");
+  if (analytics_addr == nullptr || std::strlen(analytics_addr) == 0) {
+    return;
+  }
+
+  std::string address(analytics_addr);
+  std::string host = address;
+  std::string port = "80";
+  auto delim = address.find(':');
+  if (delim != std::string::npos) {
+    host = address.substr(0, delim);
+    port = address.substr(delim + 1);
+  }
+
+  addrinfo hints;
+  std::memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  addrinfo *result = nullptr;
+  if (getaddrinfo(host.c_str(), port.c_str(), &hints, &result) != 0) {
+    return;
+  }
+
+  int sockfd = -1;
+  for (auto *rp = result; rp != nullptr; rp = rp->ai_next) {
+    sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+    if (sockfd == -1) {
+      continue;
+    }
+    if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) == 0) {
+      break;
+    }
+    close(sockfd);
+    sockfd = -1;
+  }
+
+  if (sockfd == -1) {
+    freeaddrinfo(result);
+    return;
+  }
+
+  std::string request =
+      "GET /api/record_event HTTP/1.1\r\nHost: " + host +
+      "\r\nConnection: close\r\n\r\n";
+  send(sockfd, request.data(), request.size(), 0);
+
+  char buffer[256];
+  while (recv(sockfd, buffer, sizeof(buffer), 0) > 0) {
+  }
+  close(sockfd);
+  freeaddrinfo(result);
 }
 
 }  // namespace social_network
