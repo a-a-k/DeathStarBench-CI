@@ -78,22 +78,25 @@ jobs:
             http://127.0.0.1:8080/index.html
           sleep 15
           mkdir -p "$(dirname "${DEPS_PATH}")"
+          rm -f "${DEPS_PATH}" "${DEPS_RAW_PATH}"
           tmp_deps="$(mktemp)"
+          captured=false
           for attempt in {1..12}; do
             ts=$(($(date +%s%N)/1000000))
             if curl -sSf "http://127.0.0.1:16686/api/dependencies?endTs=$ts&lookback=3600000" >"${tmp_deps}"; then
-              if jq -e '.data | length > 0' "${tmp_deps}" >/dev/null 2>&1; then
-                cp "${tmp_deps}" "${DEPS_RAW_PATH}"
+              cp "${tmp_deps}" "${DEPS_RAW_PATH}"
+              if jq -e 'if type == "array" then length > 0 elif has("data") then (.data | length > 0) elif has("dependencies") then (.dependencies | length > 0) else false end' "${tmp_deps}" >/dev/null 2>&1; then
                 mv "${tmp_deps}" "${DEPS_PATH}"
+                captured=true
                 break
               fi
               echo "Jaeger dependency graph is empty (attempt ${attempt}); waiting for traces to be indexed..."
             fi
             sleep 10
           done
-          if [ ! -f "${DEPS_PATH}" ]; then
+          if [ "${captured}" != "true" ]; then
             echo "Failed to capture Jaeger dependencies" >&2
-            jq '.' "${tmp_deps}" 2>/dev/null || cat "${tmp_deps}" 2>/dev/null || true
+            jq '.' "${DEPS_RAW_PATH}" 2>/dev/null || cat "${DEPS_RAW_PATH}" 2>/dev/null || true
             rm -f "${tmp_deps}"
             exit 1
           fi
