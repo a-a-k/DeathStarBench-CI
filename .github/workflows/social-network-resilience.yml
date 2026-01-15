@@ -78,7 +78,7 @@ jobs:
             http://127.0.0.1:8080/index.html
           sleep 15
           mkdir -p "$(dirname "${DEPS_PATH}")"
-          rm -f "${DEPS_PATH}" "${DEPS_RAW_PATH}"
+          rm -f "${DEPS_RAW_PATH}"
           tmp_deps="$(mktemp)"
           captured=false
           for attempt in {1..12}; do
@@ -94,11 +94,14 @@ jobs:
             fi
             sleep 10
           done
-          if [ "${captured}" != "true" ]; then
-            echo "Failed to capture Jaeger dependencies" >&2
-            jq '.' "${DEPS_RAW_PATH}" 2>/dev/null || cat "${DEPS_RAW_PATH}" 2>/dev/null || true
+          if [ ! -f "${DEPS_RAW_PATH}" ]; then
+            echo "Failed to fetch Jaeger dependencies payload" >&2
+            jq '.' "${tmp_deps}" 2>/dev/null || cat "${tmp_deps}" 2>/dev/null || true
             rm -f "${tmp_deps}"
             exit 1
+          fi
+          if [ "${captured}" != "true" ]; then
+            echo "Jaeger dependency graph stayed empty; keeping existing deps.json." >&2
           fi
           rm -f "${tmp_deps}"
       - name: Tear down Social Network stack
