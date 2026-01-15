@@ -56,6 +56,7 @@ jobs:
         env:
           WRK_BIN: ${{ github.workspace }}/wrk2/wrk
           DEPS_PATH: ${{ github.workspace }}/socialNetwork/resilience-demo/artifacts/deps.json
+          DEPS_RAW_PATH: ${{ github.workspace }}/socialNetwork/resilience-demo/artifacts/deps.raw.json
         run: |
           set -euo pipefail
           cd socialNetwork
@@ -82,6 +83,7 @@ jobs:
             ts=$(($(date +%s%N)/1000000))
             if curl -sSf "http://127.0.0.1:16686/api/dependencies?endTs=$ts&lookback=3600000" >"${tmp_deps}"; then
               if jq -e '.data | length > 0' "${tmp_deps}" >/dev/null 2>&1; then
+                cp "${tmp_deps}" "${DEPS_RAW_PATH}"
                 mv "${tmp_deps}" "${DEPS_PATH}"
                 break
               fi
@@ -105,7 +107,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: social-network-deps
-          path: socialNetwork/resilience-demo/artifacts/deps.json
+          path: |
+            socialNetwork/resilience-demo/artifacts/deps.json
+            socialNetwork/resilience-demo/artifacts/deps.raw.json
 
   simulate:
     name: Run simulations (pfail=${{ matrix.pfail }})
