@@ -11,7 +11,7 @@ from typing import Dict, Iterable, List, Mapping, Optional
 
 def _load_results(results_dir: Path) -> List[Mapping[str, object]]:
     data: List[Mapping[str, object]] = []
-    for path in sorted(results_dir.glob("*.json")):
+    for path in sorted(results_dir.rglob("*.json")):
         with path.open("r", encoding="utf-8") as fh:
             data.append(json.load(fh))
     return data

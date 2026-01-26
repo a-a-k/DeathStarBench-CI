@@ -31,7 +31,7 @@ class GateResult:
 
 def _load_results(directory: Path) -> Dict[Tuple[float, str], Mapping[str, object]]:
     payloads: Dict[Tuple[float, str], Mapping[str, object]] = {}
-    for path in sorted(directory.glob("*.json")):
+    for path in sorted(directory.rglob("*.json")):
         with path.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
         summary = data.get("summary")
