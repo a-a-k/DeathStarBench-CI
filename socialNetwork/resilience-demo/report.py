@@ -6,7 +6,7 @@ import argparse
 import html
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence
 
 
 def _load_results(results_dir: Path) -> List[Mapping[str, object]]:
@@ -48,7 +48,18 @@ def _collect_pfails(table: Mapping[str, Mapping[str, Dict[str, float]]]) -> List
     return sorted(pfails, key=lambda v: float(v))
 
 
-def _render_table(table: Mapping[str, Mapping[str, Dict[str, float]]]) -> str:
+def _cell_class(value: Optional[float], threshold: Optional[float], gated: bool) -> str:
+    if value is None:
+        return "cell-missing"
+    if not gated or threshold is None:
+        return "cell-neutral"
+    return "cell-pass" if value >= threshold else "cell-fail"
+
+
+def _render_table(
+    table: Mapping[str, Mapping[str, Dict[str, float]]],
+    threshold: Optional[float],
+) -> str:
     pfails = _collect_pfails(table)
     header = "".join(
         f"<th colspan='2'>pfail={html.escape(p)}</th>" for p in pfails
@@ -57,7 +68,7 @@ def _render_table(table: Mapping[str, Mapping[str, Dict[str, float]]]) -> str:
         "<table>",
         "  <thead>",
         "    <tr><th rowspan='2'>Endpoint</th>" + header + "</tr>",
-        "    <tr>" + "".join("<th>norepl</th><th>repl</th>" for _ in pfails) + "</tr>",
+        "    <tr>" + "".join("<th>norepl (ref)</th><th>repl (gated)</th>" for _ in pfails) + "</tr>",
         "  </thead>",
         "  <tbody>",
     ]
@@ -68,11 +79,13 @@ def _render_table(table: Mapping[str, Mapping[str, Dict[str, float]]]) -> str:
             data = table[endpoint].get(pfail, {})
             norepl = data.get("norepl")
             repl = data.get("repl")
+            norepl_class = _cell_class(norepl, threshold, gated=False)
+            repl_class = _cell_class(repl, threshold, gated=True)
             row_cells.append(
-                f"<td class='norepl'>{_format_percentage(norepl) if norepl is not None else '–'}</td>"
+                f"<td class='{norepl_class}'>{_format_percentage(norepl) if norepl is not None else '–'}</td>"
             )
             row_cells.append(
-                f"<td class='repl'>{_format_percentage(repl) if repl is not None else '–'}</td>"
+                f"<td class='{repl_class}'>{_format_percentage(repl) if repl is not None else '–'}</td>"
             )
         row_cells.append("</tr>")
         rows.append("".join(row_cells))
@@ -82,7 +95,7 @@ def _render_table(table: Mapping[str, Mapping[str, Dict[str, float]]]) -> str:
     return "\n".join(rows)
 
 
-def _render_summary(summary_path: Optional[Path]) -> str:
+def _render_summary(summary_path: Optional[Path], pfails: Sequence[str]) -> str:
     if not summary_path or not summary_path.exists():
         return "<p>No gate summary was generated.</p>"
     summary = json.loads(summary_path.read_text())
@@ -93,12 +106,23 @@ def _render_summary(summary_path: Optional[Path]) -> str:
         filter_html = ", ".join(html.escape(flt) for flt in filters)
     else:
         filter_html = "(all endpoints)"
+    if pfails:
+        pfail_html = ", ".join(html.escape(p) for p in pfails)
+        pfail_note = f"<p>Simulated pfail values: {pfail_html}</p>"
+    else:
+        pfail_note = ""
     return (
         "<section class='gate-summary'>"
         f"<h2>Gate status: <span class='{status}'>{status.upper()}</span></h2>"
         f"<p>{reason}</p>"
         f"<p>Threshold: {summary.get('threshold')} — Mode: {html.escape(summary.get('mode', 'any'))}</p>"
         f"<p>Filters: {filter_html}</p>"
+        f"{pfail_note}"
+        "<p class='gate-note'>"
+        "Gate checks only the replicated (repl) columns; norepl is shown for context. "
+        "Violations list the lowest-reliability pfail per endpoint. "
+        "Cell colors: green meets threshold (repl), red is below, gray is non-gated or missing."
+        "</p>"
         "</section>"
     )
 
@@ -111,8 +135,15 @@ def render_html(
 ) -> None:
     results = _load_results(results_dir)
     table = _build_endpoint_rows(results)
-    table_markup = _render_table(table)
-    summary_markup = _render_summary(summary_path)
+    pfails = _collect_pfails(table)
+    summary_markup = _render_summary(summary_path, pfails)
+    threshold = None
+    if summary_path and summary_path.exists():
+        try:
+            threshold = float(json.loads(summary_path.read_text()).get("threshold"))
+        except (TypeError, ValueError):
+            threshold = None
+    table_markup = _render_table(table, threshold)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -127,11 +158,14 @@ def render_html(
       table {{ border-collapse: collapse; width: 100%; margin-top: 1.5rem; }}
       th, td {{ border: 1px solid #ccc; padding: 0.5rem; text-align: center; }}
       thead th {{ background: #f0f0f0; }}
-      td.norepl {{ background: #ffe7d6; }}
-      td.repl {{ background: #e0f7ec; }}
+      td.cell-neutral {{ background: #f7f7f7; }}
+      td.cell-pass {{ background: #e0f7ec; }}
+      td.cell-fail {{ background: #fde2e2; }}
+      td.cell-missing {{ color: #777; background: #fafafa; }}
       .gate-summary {{ padding: 1rem; border-left: 4px solid #888; background: #fff; }}
       .gate-summary .passed {{ color: #0a7d25; }}
       .gate-summary .failed {{ color: #c2272d; }}
+      .gate-note {{ color: #444; font-size: 0.95rem; }}
       footer {{ margin-top: 2rem; font-size: 0.85rem; color: #555; }}
       code {{ background: rgba(0,0,0,0.05); padding: 0.2rem 0.3rem; border-radius: 4px; }}
     </style>
