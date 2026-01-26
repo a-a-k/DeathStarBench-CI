@@ -90,9 +90,17 @@ def _load_graph(path: Path) -> Mapping[str, object]:
         entrypoints: Mapping[str, List[str]] = {}
         metadata: MutableMapping[str, object] = {}
     elif isinstance(data, dict):
-        dependencies = data.get("dependencies", [])
+        if "dependencies" in data:
+            dependencies = data.get("dependencies", [])
+        elif "data" in data:
+            # Jaeger dependencies API payloads often use "data".
+            dependencies = data.get("data", [])
+        else:
+            dependencies = []
+        if not isinstance(dependencies, list):
+            dependencies = []
         entrypoints = data.get("entrypoints", {})
-        metadata = {k: v for k, v in data.items() if k not in {"dependencies", "entrypoints"}}
+        metadata = {k: v for k, v in data.items() if k not in {"dependencies", "entrypoints", "data"}}
     else:  # pragma: no cover - defensive guard
         raise ValueError("Unsupported graph format")
     return {
