@@ -52,7 +52,7 @@ def _cell_class(value: Optional[float], threshold: Optional[float], gated: bool)
     if value is None:
         return "cell-missing"
     if not gated or threshold is None:
-        return "cell-neutral"
+        return "cell-baseline"
     return "cell-pass" if value >= threshold else "cell-fail"
 
 
@@ -111,18 +111,26 @@ def _render_summary(summary_path: Optional[Path], pfails: Sequence[str]) -> str:
         pfail_note = f"<p>Simulated pfail values: {pfail_html}</p>"
     else:
         pfail_note = ""
+    mode_value = html.escape(summary.get("mode", "any"))
+    mode_note = (
+        "<p class='gate-note'>"
+        f"Gate mode <code>{mode_value}</code>: fail if any endpoint's lowest repl reliability "
+        "across the simulated pfail values is below the threshold.</p>"
+    )
     return (
         "<section class='gate-summary'>"
         f"<h2>Gate status: <span class='{status}'>{status.upper()}</span></h2>"
         f"<p>{reason}</p>"
-        f"<p>Threshold: {summary.get('threshold')} — Mode: {html.escape(summary.get('mode', 'any'))}</p>"
+        f"<p>Threshold: {summary.get('threshold')} — Mode: {mode_value}</p>"
         f"<p>Filters: {filter_html}</p>"
         f"{pfail_note}"
         "<p class='gate-note'>"
         "Gate checks only the replicated (repl) columns; norepl is shown for context. "
         "Violations list the lowest-reliability pfail per endpoint. "
-        "Cell colors: green meets threshold (repl), red is below, gray is non-gated or missing."
+        "Cell colors: green meets threshold (repl), red is below (repl), "
+        "blue is baseline (norepl, not gated), gray is missing."
         "</p>"
+        f"{mode_note}"
         "</section>"
     )
 
@@ -158,7 +166,7 @@ def render_html(
       table {{ border-collapse: collapse; width: 100%; margin-top: 1.5rem; }}
       th, td {{ border: 1px solid #ccc; padding: 0.5rem; text-align: center; }}
       thead th {{ background: #f0f0f0; }}
-      td.cell-neutral {{ background: #f7f7f7; }}
+      td.cell-baseline {{ background: #e7f0ff; }}
       td.cell-pass {{ background: #e0f7ec; }}
       td.cell-fail {{ background: #fde2e2; }}
       td.cell-missing {{ color: #777; background: #fafafa; }}
