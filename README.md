@@ -7,7 +7,7 @@ This repository is a demonstration fork of DeathStarBench that spotlights the **
 - `socialNetwork/` - the full Social Network application with all services, Docker Compose profiles, and the web frontend used in CI.
 - `socialNetwork/resilience-demo/` - offline Jaeger artifacts (`deps.json`) plus replica definitions (`norepl.yaml`, `replicas.yaml`) together with `simulate.py`, `gate.py`, and `report.py`.
 - `wrk2/` and `socialNetwork/wrk2/` - workload generators and Lua scripts driven by the workflow during warm-up.
-- `procrust/` - static preflight goals and reproducible scenarios for Hotel Reservation and the paper's Social Network compose-post path.
+- `procrustes/` - static preflight goals and reproducible scenarios for Hotel Reservation and the paper's Social Network compose-post path, evaluated by [Procrustes](https://github.com/MB3R-Lab/Procrustes).
 - GitHub Actions workflow `.github/workflows/social-network-resilience.yml` - orchestrates the stack start-up, dependency snapshot, simulations, release gate, and GitHub Pages deployment.
 
 ## Run everything from GitHub
@@ -42,7 +42,7 @@ This repository is a demonstration fork of DeathStarBench that spotlights the **
    - Click **Run workflow**. GitHub queues a run exactly like the screenshot above.
 
 4. **Watch the jobs.**
-   - `procrust-preflight` checks both the rendered Hotel Reservation Kubernetes path and the paper's Social Network Docker Compose/Jaeger path. It links workload identity, tracing initialization, propagation, backend configuration, entrypoint, scenario, and replicas, then publishes `report.json`, `summary.md`, `collection-plan.json`, and a Bering overlay for each target. Runtime collection and backend-specific normalization remain Bering-stage work.
+   - `procrustes-preflight` checks both the rendered Hotel Reservation Kubernetes path and the paper's Social Network Docker Compose/Jaeger path. It links workload identity, tracing initialization, propagation, backend configuration, entrypoint, scenario, and replicas, then publishes `report.json`, `summary.md`, `collection-plan.json`, and a Bering overlay for each target. Runtime collection and backend-specific normalization remain Bering-stage work.
    - `collect-dependencies` boots the Social Network stack via Docker Compose on the runner, seeds the graph, drives a mixed workload with `wrk2`, captures a Jaeger dependency snapshot, and uploads `deps.json`.
    - `simulate` fans out across the requested `pfail` values, running `simulate.py` twice per value (no replicas vs replicas) and storing JSON reports.
    - `gate-and-report` evaluates the release gate with your inputs, emits a JSON summary, renders `report/index.html`, and uploads the `gh-pages` artifact.

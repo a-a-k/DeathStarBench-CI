@@ -29,62 +29,64 @@ env:
   REPORT_HTML: socialNetwork/resilience-demo/report/index.html
 
 jobs:
-  procrust-preflight:
-    name: Procrust static preflight
+  procrustes-preflight:
+    name: Procrustes static preflight
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Check out DeathStarBench CI
         uses: actions/checkout@v4
-      - name: Check out Procrust
+      - name: Check out Procrustes
         uses: actions/checkout@v4
         with:
           repository: MB3R-Lab/Procrustes
           ref: main
-          path: .procrust-source
+          path: .procrustes-source
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
-          cache-dependency-path: .procrust-source/go.sum
-      - name: Build Procrust
-        working-directory: .procrust-source
-        run: go build -o ../procrust-bin ./cmd/procrust
+          cache-dependency-path: .procrustes-source/go.sum
+      - name: Build Procrustes
+        working-directory: .procrustes-source
+        run: go build -o ../procrustes-bin ./cmd/procrustes
       - name: Analyze Hotel Reservation static eligibility
         run: >-
-          ./procrust-bin analyze
+          ./procrustes-bin analyze
           --source k8s=hotelReservation/kubernetes
           --source cmd=hotelReservation/cmd
           --source services=hotelReservation/services
           --source config=hotelReservation/config.json
           --source module=hotelReservation/go.mod
-          --source preflight=procrust
-          --goal procrust/goal.yaml
-          --out-dir procrust/out/hotel-reservation
+          --source preflight=procrustes
+          --goal procrustes/goal.yaml
+          --out-dir procrustes/out/hotel-reservation
+          --fail-on-blocked
       - name: Analyze paper Social Network static eligibility
         run: >-
-          ./procrust-bin analyze
+          ./procrustes-bin analyze
           --source compose=socialNetwork/docker-compose.yml
           --source compose-post-service=socialNetwork/src/ComposePostService
           --source nginx-web-server=socialNetwork/nginx-web-server
           --source config=socialNetwork/config
-          --source preflight=procrust
-          --goal procrust/goal.social-network.yaml
-          --out-dir procrust/out/social-network
-      - name: Add Procrust result to job summary
+          --source preflight=procrustes
+          --goal procrustes/goal.social-network.yaml
+          --out-dir procrustes/out/social-network
+          --fail-on-blocked
+      - name: Add Procrustes result to job summary
         if: always()
         run: |
-          for summary in procrust/out/*/summary.md; do
+          for summary in procrustes/out/*/summary.md; do
             cat "$summary" >> "$GITHUB_STEP_SUMMARY"
             printf '\n' >> "$GITHUB_STEP_SUMMARY"
           done
-      - name: Upload Procrust report
+      - name: Upload Procrustes report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: deathstarbench-procrust-preflight
-          path: procrust/out
+          name: deathstarbench-procrustes-preflight
+          path: procrustes/out
 
   collect-dependencies:
     name: Capture live dependencies

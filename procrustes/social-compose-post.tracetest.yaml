@@ -11,4 +11,4 @@ spec:
       headers:
         - key: Content-Type
           value: application/x-www-form-urlencoded
-      body: username=username_0&user_id=0&text=procrust&media_ids=[]&media_types=[]&post_type=0
+      body: username=username_0&user_id=0&text=procrustes&media_ids=[]&media_types=[]&post_type=0

@@ -1,5 +1,5 @@
 contract:
-  name: io.mb3r.procrust.goal
+  name: io.mb3r.procrustes.goal
   version: 0.1.0
 scope:
   namespaces: [compose]
