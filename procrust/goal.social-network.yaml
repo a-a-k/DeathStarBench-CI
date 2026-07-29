@@ -1,0 +1,13 @@
+contract:
+  name: io.mb3r.procrust.goal
+  version: 0.1.0
+scope:
+  namespaces: [compose]
+  services: [nginx-web-server, compose-post-service]
+operation:
+  id: social-compose-post
+  entry_service: nginx-web-server
+  method: POST
+  path: /wrk2-api/post/compose
+  mandatory_targets: [compose-post-service]
+  scenario_ref: social-compose-post.tracetest.yaml

@@ -61,10 +61,24 @@ jobs:
           --source module=hotelReservation/go.mod
           --source preflight=procrust
           --goal procrust/goal.yaml
-          --out-dir procrust/out
+          --out-dir procrust/out/hotel-reservation
+      - name: Analyze paper Social Network static eligibility
+        run: >-
+          ./procrust-bin analyze
+          --source compose=socialNetwork/docker-compose.yml
+          --source compose-post-service=socialNetwork/src/ComposePostService
+          --source nginx-web-server=socialNetwork/nginx-web-server
+          --source config=socialNetwork/config
+          --source preflight=procrust
+          --goal procrust/goal.social-network.yaml
+          --out-dir procrust/out/social-network
       - name: Add Procrust result to job summary
         if: always()
-        run: cat procrust/out/summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          for summary in procrust/out/*/summary.md; do
+            cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+            printf '\n' >> "$GITHUB_STEP_SUMMARY"
+          done
       - name: Upload Procrust report
         if: always()
         uses: actions/upload-artifact@v4

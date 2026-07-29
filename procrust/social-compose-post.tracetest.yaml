@@ -1,0 +1,14 @@
+type: Test
+spec:
+  id: social-compose-post
+  name: Social Network compose post
+  description: Exercise the paper's DeathStarBench Social Network entry path before Jaeger collection.
+  trigger:
+    type: http
+    httpRequest:
+      url: http://${var:SOCIAL_FRONTEND_ADDR}/wrk2-api/post/compose
+      method: POST
+      headers:
+        - key: Content-Type
+          value: application/x-www-form-urlencoded
+      body: username=username_0&user_id=0&text=procrust&media_ids=[]&media_types=[]&post_type=0
