@@ -29,6 +29,49 @@ env:
   REPORT_HTML: socialNetwork/resilience-demo/report/index.html
 
 jobs:
+  procrust-preflight:
+    name: Procrust static preflight
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out DeathStarBench CI
+        uses: actions/checkout@v4
+      - name: Check out Procrust
+        uses: actions/checkout@v4
+        with:
+          repository: MB3R-Lab/Procrustes
+          ref: main
+          path: .procrust-source
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+          cache-dependency-path: .procrust-source/go.sum
+      - name: Build Procrust
+        working-directory: .procrust-source
+        run: go build -o ../procrust-bin ./cmd/procrust
+      - name: Analyze Hotel Reservation static eligibility
+        run: >-
+          ./procrust-bin analyze
+          --source k8s=hotelReservation/kubernetes
+          --source cmd=hotelReservation/cmd
+          --source services=hotelReservation/services
+          --source config=hotelReservation/config.json
+          --source module=hotelReservation/go.mod
+          --source preflight=procrust
+          --goal procrust/goal.yaml
+          --out-dir procrust/out
+      - name: Add Procrust result to job summary
+        if: always()
+        run: cat procrust/out/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload Procrust report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deathstarbench-procrust-preflight
+          path: procrust/out
+
   collect-dependencies:
     name: Capture live dependencies
     runs-on: ubuntu-latest

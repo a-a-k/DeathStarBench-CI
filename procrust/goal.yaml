@@ -1,0 +1,13 @@
+contract:
+  name: io.mb3r.procrust.goal
+  version: 0.1.0
+scope:
+  namespaces: [default]
+  services: [frontend, search]
+operation:
+  id: hotel-search
+  entry_service: frontend
+  method: GET
+  path: /hotels
+  mandatory_targets: [search]
+  scenario_ref: hotel-search.tracetest.yaml

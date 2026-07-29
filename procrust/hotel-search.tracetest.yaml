@@ -1,0 +1,19 @@
+type: Test
+spec:
+  id: hotel-search
+  name: Hotel Reservation search
+  description: Exercise the Hotel Reservation search operation before Bering trace collection.
+  trigger:
+    type: http
+    httpRequest:
+      url: http://${var:FRONTEND_ADDR}/hotels
+      method: GET
+      queryParams:
+        - key: inDate
+          value: "2015-04-09"
+        - key: outDate
+          value: "2015-04-10"
+        - key: lat
+          value: "38.0235"
+        - key: lon
+          value: "-122.095"

@@ -7,6 +7,7 @@ This repository is a demonstration fork of DeathStarBench that spotlights the **
 - `socialNetwork/` - the full Social Network application with all services, Docker Compose profiles, and the web frontend used in CI.
 - `socialNetwork/resilience-demo/` - offline Jaeger artifacts (`deps.json`) plus replica definitions (`norepl.yaml`, `replicas.yaml`) together with `simulate.py`, `gate.py`, and `report.py`.
 - `wrk2/` and `socialNetwork/wrk2/` - workload generators and Lua scripts driven by the workflow during warm-up.
+- `procrust/` - the static preflight goal and reproducible Hotel Reservation search scenario used to assess readiness for Bering before trace collection.
 - GitHub Actions workflow `.github/workflows/social-network-resilience.yml` - orchestrates the stack start-up, dependency snapshot, simulations, release gate, and GitHub Pages deployment.
 
 ## Run everything from GitHub
@@ -41,6 +42,7 @@ This repository is a demonstration fork of DeathStarBench that spotlights the **
    - Click **Run workflow**. GitHub queues a run exactly like the screenshot above.
 
 4. **Watch the jobs.**
+   - `procrust-preflight` checks the rendered Hotel Reservation Kubernetes artifacts together with its Jaeger/OpenTracing initialization, propagation, backend, and configuration. It publishes `report.json`, `summary.md`, `collection-plan.json`, and a Bering overlay. The job treats the complete Jaeger path as the baseline model-discovery route demonstrated by this repository; runtime collection and backend-specific normalization remain Bering-stage work.
    - `collect-dependencies` boots the Social Network stack via Docker Compose on the runner, seeds the graph, drives a mixed workload with `wrk2`, captures a Jaeger dependency snapshot, and uploads `deps.json`.
    - `simulate` fans out across the requested `pfail` values, running `simulate.py` twice per value (no replicas vs replicas) and storing JSON reports.
    - `gate-and-report` evaluates the release gate with your inputs, emits a JSON summary, renders `report/index.html`, and uploads the `gh-pages` artifact.
