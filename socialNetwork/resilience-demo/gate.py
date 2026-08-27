@@ -41,19 +41,22 @@ def _load_results(directory: Path) -> Dict[Tuple[float, str], Mapping[str, objec
         mode = summary.get("mode")
         if not mode:
             mode = Path(summary.get("replicas_file", "")).stem or path.stem
-        payloads[(pfail, mode)] = data
+        mode_key = mode.lower() if isinstance(mode, str) else str(mode or "").lower()
+        payloads[(pfail, mode_key)] = data
     return payloads
 
 
 def _select_endpoints(
     payloads: Mapping[Tuple[float, str], Mapping[str, object]],
     filters: Iterable[str],
+    results_mode: Optional[str],
 ) -> Dict[str, List[Tuple[float, float]]]:
     selected: Dict[str, List[Tuple[float, float]]] = {}
     normalized_filters = [f for f in (flt.strip() for flt in filters) if f]
+    normalized_mode = results_mode.lower() if results_mode else None
 
     for (pfail, mode), data in payloads.items():
-        if mode != "repl":
+        if normalized_mode and mode != normalized_mode:
             continue
         endpoints: Mapping[str, Mapping[str, object]] = data.get("endpoints", {})
         for endpoint, details in endpoints.items():
@@ -69,12 +72,17 @@ def evaluate_gate(
     results_dir: Path,
     threshold: float,
     mode: str,
+    results_mode: Optional[str],
     filters: Iterable[str],
 ) -> GateResult:
     payloads = _load_results(results_dir)
-    scores = _select_endpoints(payloads, filters)
+    scores = _select_endpoints(payloads, filters, results_mode)
     if not scores:
-        return GateResult(True, "No endpoints matched the filters; gate skipped", scores)
+        if results_mode:
+            reason = f"No endpoints matched the filters for mode '{results_mode}'; gate skipped"
+        else:
+            reason = "No endpoints matched the filters; gate skipped"
+        return GateResult(True, reason, scores)
 
     violations: Dict[str, Tuple[float, float]] = {}
     aggregate_values: List[float] = []
@@ -109,6 +117,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--results", required=True, type=Path, help="Directory containing simulation JSON outputs")
     parser.add_argument("--threshold", required=True, type=float, help="Reliability cutoff")
     parser.add_argument("--mode", choices=["any", "mean"], default="any", help="Gate mode")
+    parser.add_argument("--results-mode", default="norepl", help="Simulation mode to evaluate (e.g. norepl or repl)")
     parser.add_argument("--filters", default="", help="Comma separated endpoint filters")
     parser.add_argument("--summary", type=Path, help="Optional file to write the evaluation summary")
     return parser.parse_args(argv)
@@ -117,11 +126,13 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
     filters = [flt for flt in args.filters.split(",") if flt]
-    result = evaluate_gate(args.results, args.threshold, args.mode, filters)
+    normalized_results_mode = (args.results_mode or "").strip().lower() or None
+    result = evaluate_gate(args.results, args.threshold, args.mode, normalized_results_mode, filters)
 
     summary_payload = {
         "threshold": args.threshold,
         "mode": args.mode,
+        "results_mode": normalized_results_mode,
         "filters": filters,
         "passed": result.passed,
         "reason": result.reason,
